@@ -1,0 +1,35 @@
+# Jython is a language runtime (no web UI). This builds it from source and serves
+# a small status page (generated from real Jython output) on port 3000.
+services:
+  jython:
+    image: gradle:7.4.2-jdk8
+    working_dir: /src
+    volumes:
+      - .:/src
+      - gradle-cache:/home/gradle/.gradle
+    environment:
+      - GRADLE_USER_HOME=/home/gradle/.gradle
+    ports: ["3000:3000"]
+    user: root
+    restart: on-failure
+    command:
+      - sh
+      - -ec
+      - |
+        gradle --no-daemon jar -x test
+        JAR=$$(ls /src/build2/libs/*.jar 2>/dev/null | grep -v -e sources -e javadoc -e tests | head -1)
+        [ -n "$$JAR" ] || { echo "jar missing"; exit 1; }
+        CP="$$JAR:$$(ls /src/extlibs/*.jar | tr '\n' ':')"
+        mkdir -p /tmp/web && cd /tmp/web
+        { echo "<html><body style='font-family:sans-serif'><h1>Jython is built and running</h1><pre>";
+          java -cp "$$CP" org.python.util.jython -c "import sys; print(sys.version); print('2**100 =', 2**100); from java.lang import System; print('Java', System.getProperty('java.version'))";
+          echo "</pre></body></html>"; } > index.html
+        exec java -cp "$$CP" org.python.util.jython -m SimpleHTTPServer 3000
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs localhost:3000/ >/dev/null || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 600s
+volumes:
+  gradle-cache:
